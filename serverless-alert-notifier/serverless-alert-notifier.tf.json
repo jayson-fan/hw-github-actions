@@ -1,0 +1,191 @@
+{
+    "terraform": {
+        "required_providers": [
+            {
+                "huaweicloud": {
+                    "source": "huaweicloud/huaweicloud",
+                    "version": "1.35.2"
+                }
+            }
+        ]
+    },
+    "variable": {
+        "topic_name": {
+            "default": "smn001",
+            "description": "消息通知服务SMN主题的名字，不支持重名。Topic名称只能包含大写字母、小写字母、数字、-和_，且必须由大写字母、小写字母或数字开头，长度为1到255个字符。",
+            "type": "string"
+        },
+        "secret_name": {
+            "default": "smn001",
+            "description": "存储在数据加密服务DEW中的企业微信凭证名称，企业微信凭证获取以及存储请参照部署指南。",
+            "type": "string"
+        },
+        "condition_cpu_value": {
+            "default": 70,
+            "description": "指定CPU使用率平均值大于百分之多少时发送告警推送。取值范围：0-100。默认70%。",
+            "type": "number"
+        },
+        "condition_disk_value": {
+            "default": 70,
+            "description": "指定系统盘使用率平均值大于百分之多少时发送告警推送。取值范围：0-100。默认70%。",
+            "type": "number"
+        },
+        "condition_mem_value": {
+            "default": 70,
+            "description": "指定内存使用率平均值大于百分之多少时发送告警推送。取值范围：0-100。默认70%。",
+            "type": "number"
+        }
+    },
+    "data": {
+        "huaweicloud_compute_instances": {
+            "compute_instances": {
+                "status": "ACTIVE"
+            }
+        },
+        "huaweicloud_csms_secret_version": {
+            "secret": {
+                "secret_name": "${var.secret_name}"
+            }
+        }
+    },
+    "locals": [
+        {
+            "ecs_ids": "${data.huaweicloud_compute_instances.compute_instances.instances[*].id}"
+        }
+    ],
+    "resource": {
+        "huaweicloud_ces_alarmrule": {
+            "alarmrule_cpu": {
+                "alarm_actions": [
+                    {
+                        "notification_list": [
+                            "${huaweicloud_smn_topic.smn_topic.id}"
+                        ],
+                        "type": "notification"
+                    }
+                ],
+                "alarm_name": "${var.topic_name}-ces-cpu",
+                "condition": [
+                    {
+                        "comparison_operator": "\u003e",
+                        "count": 1,
+                        "filter": "average",
+                        "period": 1,
+                        "unit": "%",
+                        "value": "${var.condition_cpu_value}"
+                    }
+                ],
+                "count": "${length(local.ecs_ids)}",
+                "metric": [
+                    {
+                        "dimensions": [
+                            {
+                                "name": "instance_id",
+                                "value": "${local.ecs_ids[count.index]}"
+                            }
+                        ],
+                        "metric_name": "cpu_util",
+                        "namespace": "SYS.ECS"
+                    }
+                ]
+            },
+            "alarmrule_disk": {
+                "alarm_actions": [
+                    {
+                        "notification_list": [
+                            "${huaweicloud_smn_topic.smn_topic.id}"
+                        ],
+                        "type": "notification"
+                    }
+                ],
+                "alarm_name": "${var.topic_name}-ces-disk",
+                "condition": [
+                    {
+                        "comparison_operator": "\u003e",
+                        "count": 1,
+                        "filter": "average",
+                        "period": 1,
+                        "unit": "%",
+                        "value": "${var.condition_disk_value}"
+                    }
+                ],
+                "count": "${length(local.ecs_ids)}",
+                "metric": [
+                    {
+                        "dimensions": [
+                            {
+                                "name": "instance_id",
+                                "value": "${local.ecs_ids[count.index]}"
+                            }
+                        ],
+                        "metric_name": "disk_util_inband",
+                        "namespace": "SYS.ECS"
+                    }
+                ]
+            },
+            "alarmrule_mem": {
+                "alarm_actions": [
+                    {
+                        "notification_list": [
+                            "${huaweicloud_smn_topic.smn_topic.id}"
+                        ],
+                        "type": "notification"
+                    }
+                ],
+                "alarm_name": "${var.topic_name}-ces-mem",
+                "condition": [
+                    {
+                        "comparison_operator": "\u003e",
+                        "count": 1,
+                        "filter": "average",
+                        "period": 1,
+                        "unit": "%",
+                        "value": "${var.condition_mem_value}"
+                    }
+                ],
+                "count": "${length(local.ecs_ids)}",
+                "metric": [
+                    {
+                        "dimensions": [
+                            {
+                                "name": "instance_id",
+                                "value": "${local.ecs_ids[count.index]}"
+                            }
+                        ],
+                        "metric_name": "mem_util",
+                        "namespace": "SYS.ECS"
+                    }
+                ]
+            }
+        },
+        "huaweicloud_fgs_function": {
+            "function": {
+                "app": "default",
+                "code_type": "inline",
+                "func_code": "# -*- coding:utf-8 -*-\nimport json\nimport requests\ns = requests.session()\nsecretName = ${data.huaweicloud_csms_secret_version.secret.secret_text}\ncorpId = secretName['corpId']\ncorpSecret = secretName['corpSecret']\nagentid = secretName['agentId']\ndef get_token(corpId, corpSecret):\n    url = \"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={0}&corpsecret={1}\".format(corpId, corpSecret)\n    rep = s.get(url)\n    if rep.status_code == 200:\n        content = json.loads(rep.content)\n            # Check errcode to verify the call is succeed\n        if content['errcode'] == 0:# If succeed\n            return content['access_token']\n        else:                # If failed\n            raise Exception('Non-zero errorcode: {}'.format(content['errcode']))\n    else:\n        raise Exception('Request failed with return code: {}'.format(rep.status_code))\n\ndef send_text_msg(msg):\n    token = get_token(corpId, corpSecret)\n    url = \"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=\" + token\n    header = {\n        \"Content-Type\": \"application/json\"\n    }\n    \n    form_data = {\n        \"touser\": \"@all\",\n        \"toparty\": \"\",\n        \"totag\": \"\",\n        \"msgtype\": \"text\",\n        \"agentid\": agentid,\n        \"text\" : {\n            \"content\": \"%s\" %(msg)\n        }\n    }\n\n    rep = s.post(url, data=json.dumps(form_data).encode('utf-8'), headers=header, verify=False)\n    if rep.status_code == 200:\n        content = json.loads(rep.content)\n        if content['errcode'] == 0:\n            # If succeed\n            pass\n        else:\n            raise Exception('Errcode: {} , Errmsg: {}'.format(content['errcode'], content['errmsg']))\n    else:\n        raise Exception('Request failed with status_code: {}'.format(rep.status_code))\n\ndef handler (event, context):\n    message = event['record'][0]['smn']['message'] #json.dumps(event)\n    send_text_msg(message)\n    return {\n        \"statusCode\": 200,\n        \"isBase64Encoded\": False,\n        \"body\": json.dumps(event),\n        \"headers\": {\n            \"Content-Type\": \"application/json\"\n        }\n    }\n",
+                "handler": "index.handler",
+                "memory_size": 128,
+                "name": "${var.topic_name}-function",
+                "runtime": "Python3.6",
+                "timeout": 3
+            }
+        },
+        "huaweicloud_fgs_trigger": {
+            "fgs_trigger": {
+                "function_urn": "${huaweicloud_fgs_function.function.urn}",
+                "smn": [
+                    {
+                        "topic_urn": "${huaweicloud_smn_topic.smn_topic.topic_urn}"
+                    }
+                ],
+                "status": "ACTIVE",
+                "type": "SMN"
+            }
+        },
+        "huaweicloud_smn_topic": {
+            "smn_topic": {
+                "name": "${var.topic_name}"
+            }
+        }
+    }
+}
