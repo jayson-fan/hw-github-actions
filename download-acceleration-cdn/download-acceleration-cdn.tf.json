@@ -1,0 +1,81 @@
+{
+    "terraform": {
+        "required_providers": [
+            {
+                "huaweicloud": {
+                    "source": "huaweicloud/huaweicloud",
+                    "version": "1.35.2"
+                }
+            }
+        ]
+    },
+    "variable": {
+        "bucket_name": {
+            "default": "cdn001",
+            "description": "OBS桶名称，用于存放应用数据，全局唯一。取值范围：仅支持小写字母、数字、中划线（-）、英文句号（.）， 长度 3~63个字符。",
+            "type": "string"
+        },
+        "accelerate_domain": {
+            "default": "download.game-apk1.com",
+            "description": "加速域名，输入需加速的应用访问域名地址，该域名必须为在工信部已经备案域名，此域名建议为publicZone_domain公网域名的二级域名。取值范围：域名用字母（A-Z，a-z，大小写等价）、数字（0-9）和连接符（-）组成，各级域名之间用实点（.）连接，国际域名75个字符。注意连接符（-）不能作为域名的开头或结尾字符。示例：download.game-apk1.com。",
+            "type": "string"
+        },
+        "publicZone_domain": {
+            "default": "game-apk1.com",
+            "description": "公网域名地址，用户业务系统对外提供服务的域名。取值范围：域名用字母（A-Z，a-z，大小写等价）、数字（0-9）和连接符（-）组成，各级域名之间用实点（.）连接，国际域名75个字符。注意连接符（-）不能作为域名的开头或结尾字符。示例：game-apk1.com。",
+            "type": "string"
+        },
+        "service_type": {
+            "default": "download",
+            "description": "加速业务类型，默认“download”，可根据业务实际需求选择。取值范围：“download”：表示业务类型为文件下载加速；“web”：则表示类型为网站加速 ；“video”：则表示业务类型为点播加速 。",
+            "type": "string"
+        }
+    },
+    "resource": {
+        "huaweicloud_obs_bucket": {
+            "bucket": {
+                "acl": "public-read",
+                "bucket": "${var.bucket_name}",
+                "multi_az": true
+            }
+        },
+        "huaweicloud_obs_bucket_policy": {
+            "policy": {
+                "bucket": "${huaweicloud_obs_bucket.bucket.id}",
+                "policy": "  {\r\n        \"Statement\": [{\r\n                \"Action\": [\"GetObject\"],\r\n                \"Effect\": \"Allow\",\r\n                \"Principal\": {\r\n                        \"ID\": \"*\"\r\n                },\r\n                \"Resource\": \"${var.bucket_name}/*\",\r\n                \"Sid\": \"AddPerm\"\r\n        }]\r\n  }\r\n"
+            }
+        },
+        "huaweicloud_cdn_domain": {
+            "domain": {
+                "name": "${var.accelerate_domain}",
+                "sources": [
+                    {
+                        "active": 1,
+                        "origin": "${huaweicloud_obs_bucket.bucket.bucket_domain_name}",
+                        "origin_type": "obs_bucket"
+                    }
+                ],
+                "type": "${var.service_type}"
+            }
+        },
+        "huaweicloud_dns_recordset": {
+            "recordse": {
+                "description": "record set",
+                "name": "${var.accelerate_domain}",
+                "records": [
+                    "${huaweicloud_cdn_domain.domain.cname}"
+                ],
+                "ttl": 3000,
+                "type": "CNAME",
+                "zone_id": "${huaweicloud_dns_zone.zone.id}"
+            }
+        },
+        "huaweicloud_dns_zone": {
+            "zone": {
+                "name": "${var.publicZone_domain}",
+                "ttl": 3000,
+                "zone_type": "public"
+            }
+        }
+    }
+}

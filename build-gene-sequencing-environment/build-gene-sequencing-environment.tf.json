@@ -1,0 +1,230 @@
+{
+    "terraform": {
+        "required_providers": {
+            "huaweicloud": {
+                "source": "huawei.com/provider/huaweicloud",
+                "version": ">=1.37.0"
+            }
+        }
+    },
+    "variable": {
+        "ecs_name": {
+            "default": "gene-hpc",
+            "description": "弹性云服务器名称，命名方式为{ecs_name}-gene-[0X]，不支持重名。取值范围：1-56个字符组成，包括字母、数字、下划线（_）、连字符（-）和句点（.）。默认gene-hpc。",
+            "type": "string"
+        },
+		"ecs_worker_count": {
+            "default": 2,
+            "description": "弹性云服务器计算节点数量（worker），默认3台云服务器：1台调度节点（master）、2台计算节点（worker）。取值范围：大于等于2台。默认2台。",
+            "type": "number"
+        },
+		"ecs_password": {
+            "default": "qwer@1234",
+            "description": "弹性云服务器初始密码，创建完成后，请参考部署指南登录ECS控制台修改密码。取值范围：长度为8-26个字符，密码至少包含大写字母、小写字母、数字和特殊字符（$!@%-_=+[]:./^,{}?）中的三种，密码不能包含用户名或用户名的逆序。管理员账户默认为root。",
+            "type": "string"
+        },
+		"ecs_image": {
+            "default": "CentOS 7.6 64bit",
+            "description": "弹性云服务器的公共操作系统镜像，具体请参考部署指南。默认CentOS 7.6 64bit。",
+            "type": "string"
+        },
+        "ecs_master_flavor": {
+            "default": "c6s.xlarge.2",
+            "description": "弹性云服务器调度节点规格，具体请参考部署指南。默认c6s.xlarge.2（c6s|4vCPUs|8GiB)。",
+            "type": "string"
+        },
+        "ecs_worker_flavor": {
+            "default": "c6s.8xlarge.2",
+            "description": "弹性云服务器计算节点规格，具体请参考部署指南。默认c6s.8xlarge.2（c6s|4vCPUs|8GiB)。",
+            "type": "string"
+        },
+        "system_disk_type": {
+            "default": "SAS",
+            "description": "弹性云服务器系统盘规格，具体请参考部署指南。默认SAS。",
+            "type": "string"
+        },
+        "system_disk_size": {
+            "default": 40,
+            "description": "弹性云服务器系统盘大小，不支持缩盘。取值范围：1-1024GB，默认40GB。",
+            "type": "string"
+        },
+        "data_disk_type": {
+            "default": "SAS",
+            "description": "弹性云服务器数据盘规格，具体请参考部署指南。默认为SAS。",
+            "type": "string"
+        },
+        "data_disk_size": {
+            "default": 100,
+            "description": "弹性云服务器数据盘大小，取值范围：10-32768GB。默认100GB。",
+            "type": "string"
+        },
+        "bandwidth_size": {
+            "default": 5,
+            "description": "带宽大小，取值范围：1-2,000Mbit/s。默认5Mbit/s。",
+            "type": "string"
+        },
+        "sfs_turbo_size": {
+            "default": 10240,
+            "description": "弹性服务共享文件系统大小，取值范围：500-32768GB。默认10240GB。",
+            "type": "string"
+        },
+        "charging_mode": {
+            "default": "postPaid",
+            "description": "计费模式，默认自动扣费，取值为prePaid（包年包月）或postPaid（按需计费），默认postPaid。",
+            "type": "string"
+        },
+        "charging_unit": {
+            "default": "month",
+            "description": "计费周期单位，当计费方式设置为prePaid，此参数是必填项。有效值为：month（包月）和year（包年），默认month。",
+            "type": "string"
+        },
+        "charging_period": {
+            "default": 1,
+            "description": "计费周期，当计费方式设置为prePaid，此参数是必填项。当计费周期单位设置为month，取值范围为1~9；当计费周期单位设置为year，取值范围为1~3。默认1。",
+            "type": "number"
+        }
+    },
+    "data": {
+        "huaweicloud_availability_zones": {
+            "zones": {}
+        },
+        "huaweicloud_images_image": {
+            "centos": {
+                "most_recent": true,
+                "name": "${var.ecs_image}",
+                "visibility": "public"
+            }
+        }
+    },
+    "resource": {
+        "huaweicloud_vpc": {
+            "vpc": {
+                "cidr": "172.16.0.0/24",
+                "name": "${var.ecs_name}_vpc"
+            }
+        },
+        "huaweicloud_vpc_subnet": {
+            "subnet": {
+                "availability_zone": "${data.huaweicloud_availability_zones.zones.names[0]}",
+                "cidr": "${huaweicloud_vpc.vpc.cidr}",
+                "gateway_ip": "172.16.0.1",
+                "name": "${var.ecs_name}_subnet",
+                "vpc_id": "${huaweicloud_vpc.vpc.id}"
+            }
+        },
+        "huaweicloud_networking_secgroup": {
+            "secgroup": {
+                "name": "${var.ecs_name}_secgroup"
+            }
+        },
+        "huaweicloud_networking_secgroup_rule": {
+            "allow_http": {
+                "direction": "ingress",
+                "ethertype": "IPv4",
+                "ports": 80,
+                "protocol": "tcp",
+                "remote_ip_prefix": "0.0.0.0/0",
+                "security_group_id": "${huaweicloud_networking_secgroup.secgroup.id}"
+            },
+            "allow_https": {
+                "direction": "ingress",
+                "ethertype": "IPv4",
+                "ports": 443,
+                "protocol": "tcp",
+                "remote_ip_prefix": "0.0.0.0/0",
+                "security_group_id": "${huaweicloud_networking_secgroup.secgroup.id}"
+            },
+            "allow_ping": {
+                "direction": "ingress",
+                "ethertype": "IPv4",
+                "protocol": "icmp",
+                "remote_ip_prefix": "0.0.0.0/0",
+                "security_group_id": "${huaweicloud_networking_secgroup.secgroup.id}"
+            },
+            "allow_ssh_linux": {
+                "direction": "ingress",
+                "ethertype": "IPv4",
+                "ports": 22,
+                "protocol": "tcp",
+                "remote_ip_prefix": "0.0.0.0/0",
+                "security_group_id": "${huaweicloud_networking_secgroup.secgroup.id}"
+            }
+        },
+        "huaweicloud_vpc_eip": {
+            "myeip": {
+                "bandwidth": {
+                    "charge_mode": "traffic",
+                    "name": "${var.ecs_name}-mybandwidth",
+                    "share_type": "PER",
+                    "size": "${var.bandwidth_size}"
+                },
+                "charging_mode": "postPaid",
+                "publicip": {
+                    "type": "5_bgp"
+                }
+            }
+        },
+        "huaweicloud_sfs_turbo": {
+            "sfs-turbo": {
+                "availability_zone": "${data.huaweicloud_availability_zones.zones.names[0]}",
+                "name": "${var.ecs_name}_sfs-turbo",
+                "security_group_id": "${huaweicloud_networking_secgroup.secgroup.id}",
+                "size": "${var.sfs_turbo_size}",
+                "subnet_id": "${huaweicloud_vpc_subnet.subnet.id}",
+                "vpc_id": "${huaweicloud_vpc.vpc.id}"
+            }
+        },
+        "huaweicloud_compute_instance": {
+            "master": {
+                "depends_on": ["huaweicloud_sfs_turbo.sfs-turbo","huaweicloud_compute_instance.worker"],
+                "admin_pass": "${var.ecs_password}",
+                "availability_zone": "${data.huaweicloud_availability_zones.zones.names[0]}",
+                "charging_mode": "${var.charging_mode}",
+                "data_disks": {
+                    "size": "${var.data_disk_size}",
+                    "type": "${var.data_disk_type}"
+                },
+                "delete_disks_on_termination": true,
+                "flavor_id": "${var.ecs_master_flavor}",
+                "image_id": "${data.huaweicloud_images_image.centos.id}",
+                "name": "${var.ecs_name}-gene-00",
+                "network": {
+                    "fixed_ip_v4": "172.16.0.10",
+                    "uuid": "${huaweicloud_vpc_subnet.subnet.id}"
+                },
+                "eip_id": "${huaweicloud_vpc_eip.myeip.id}",
+                "period": "${var.charging_period}",
+                "period_unit": "${var.charging_unit}",
+                "security_group_ids": ["${huaweicloud_networking_secgroup.secgroup.id}"],
+                "system_disk_size": "${var.system_disk_size}",
+                "system_disk_type": "${var.system_disk_type}",
+                "user_data": "#!/bin/bash\nwget -P /tmp/ https://documentation-samples.obs.cn-north-4.myhuaweicloud.com/solution-as-code-publicbucket/solution-as-code-moudle/build-gene-sequencing-environment/userdata/configure-munge-slurm.sh\nchmod +x /tmp/configure-munge-slurm.sh\nsudo sh /tmp/configure-munge-slurm.sh ${var.ecs_password} ${var.ecs_worker_count} ${var.ecs_name} ${huaweicloud_sfs_turbo.sfs-turbo.export_location}\nrm -rf /tmp/configure-munge-slurm.sh"
+            },
+            "worker": {
+                "admin_pass": "${var.ecs_password}",
+                "availability_zone": "${data.huaweicloud_availability_zones.zones.names[0]}",
+                "charging_mode": "${var.charging_mode}",
+                "count": "${var.ecs_worker_count}",
+                "data_disks": {
+                    "size": "${var.data_disk_size}",
+                    "type": "${var.data_disk_type}"
+                },
+                "delete_disks_on_termination": true,
+                "flavor_id": "${var.ecs_worker_flavor}",
+                "image_id": "${data.huaweicloud_images_image.centos.id}",
+                "name": "${var.ecs_name}-gene-${format(\"%02d\",count.index+1)}",
+                "network": {
+                    "fixed_ip_v4": "172.16.0.1${count.index+1}",
+                    "uuid": "${huaweicloud_vpc_subnet.subnet.id}"
+                },
+                "period": "${var.charging_period}",
+                "period_unit": "${var.charging_unit}",
+                "security_group_ids": [
+                    "${huaweicloud_networking_secgroup.secgroup.id}"
+                ],
+                "system_disk_size": "${var.system_disk_size}",
+                "system_disk_type": "${var.system_disk_type}"
+            }
+        }
+    }
+}

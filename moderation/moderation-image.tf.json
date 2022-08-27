@@ -1,0 +1,94 @@
+{
+    "terraform": {
+        "required_providers": [
+            {
+                "huaweicloud": {
+                    "source": "huaweicloud/huaweicloud",
+                    "version": "1.35.2"
+                }
+            }
+        ]
+    },
+    "variable": {
+        "resource_bucket_name": {
+            "default": "resourcebucket",
+            "description": "桶名称，全局唯一，用于上传待审核图片。取值范围：仅支持小写字母、数字、中划线（-）、英文句号（.）。",
+            "type": "string"
+        },
+        "result_bucket_name": {
+            "default": "resultbucket",
+            "description": "桶名称，全局唯一，用于存放审核结果以及转储审核不通过的图片。取值范围：仅支持小写字母、数字、中划线（-）、英文句号（.）。",
+            "type": "string"
+        }
+    },
+    "resource": {
+        "huaweicloud_identity_agency": {
+            "agency": {
+                "delegated_service_name": "op_svc_cff",
+                "domain_roles": [
+                    "OBS Administrator"
+                ],
+                "name": "${var.resource_bucket_name}_agency",
+                "project_role": [
+                    {
+                        "project": "MOS",
+                        "roles": [
+                            "OBS Administrator"
+                        ]
+                    }
+                ]
+            }
+        },
+        "huaweicloud_fgs_function": {
+            "mod_fgs": {
+                "agency": "${huaweicloud_identity_agency.agency.name}",
+                "app": "default",
+                "code_type": "obs",
+                "code_url": "https://solution-as-code-publicbucket.obs.cn-north-4.myhuaweicloud.com/moderation/moderation_image.zip",
+                "depend_list": [
+                    "af0d3f19-af67-48f1-a0d7-c3918b2319f8",
+                    "e9b20258-b719-4f4d-a19c-21740fcb45e7",
+                    "3a3417ef-6f77-4e00-8208-b59713a3d69c"
+                ],
+                "handler": "moderation_image.handler",
+                "memory_size": 128,
+                "name": "${var.resource_bucket_name}-fgs",
+                "runtime": "Python3.6",
+                "timeout": 120,
+                "user_data": "${jsonencode({\n    region = \"cn-north-4\"\n    obs_server = \"obs.cn-north-4.myhuaweicloud.com\"\n    dump_bucket = huaweicloud_obs_bucket.mod_result_bucket.bucket\n  })}"
+            }
+        },
+        "huaweicloud_fgs_trigger": {
+            "fgs_trigger": {
+                "depends_on": [
+                    "huaweicloud_fgs_function.mod_fgs"
+                ],
+                "function_urn": "${huaweicloud_fgs_function.mod_fgs.urn}",
+                "obs": [
+                    {
+                        "bucket_name": "${huaweicloud_obs_bucket.mod_resource_bucket.bucket}",
+                        "event_notification_name": "${var.resource_bucket_name}_trigger",
+                        "events": [
+                            "Post",
+                            "Put"
+                        ]
+                    }
+                ],
+                "status": "ACTIVE",
+                "type": "OBS"
+            }
+        },
+        "huaweicloud_obs_bucket": {
+            "mod_resource_bucket": {
+                "acl": "private",
+                "bucket": "${var.resource_bucket_name}",
+                "multi_az": true
+            },
+            "mod_result_bucket": {
+                "acl": "private",
+                "bucket": "${var.result_bucket_name}",
+                "multi_az": true
+            }
+        }
+    }
+}
